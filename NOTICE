@@ -1,0 +1,15 @@
+BOOP is an independent local Bluetooth strap companion for Windows.
+
+This source includes adaptations of NOOP by NoopApp, pinned to
+7f396e98ed9d259df08e3a0a58cfac05fc70615c:
+https://github.com/ryanbr/noop
+
+Required Notice: Copyright 2026 NoopApp
+
+The included NOOP code and derived implementations are distributed under the
+PolyForm Noncommercial License 1.0.0. See LICENSE and vendor/noop/LICENSE.
+Commercial use is not granted by that license. The protocol wire facts are
+separately identified in the upstream license. Third-party components retain
+their own licenses; see vendor/noop/NOTICE and vendor/noop/PROVENANCE.md.
+
+BOOP is independent of NoopApp; no endorsement or affiliation is claimed.

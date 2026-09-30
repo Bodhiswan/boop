@@ -1,0 +1,2 @@
+# Keep the reviewed upstream fixture bytes identical to their recorded hashes.
+vendor/noop/test-fixtures/* -text whitespace=cr-at-eol

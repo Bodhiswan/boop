@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BOOP · Your body, your data</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/compact.css">
+  <script defer src="/static/app.js"></script>
+  <script defer src="/static/coach-stream.js"></script>
+  <script defer src="/static/dashboard.js"></script>
+  <script defer src="/static/workout-ui.js"></script>
+</head>
+<body>
+  <aside class="sidebar"><a class="brand" href="#today"><img src="/static/icon.svg" alt="" width="36" height="36"><span>boop.</span></a><p class="sidebar-note">Your body, your data.</p><nav id="navigation" aria-label="Main pages"></nav><div class="sidebar-bottom"><span class="dot"></span> On this laptop<br><small>BOOP · local companion</small></div></aside><main>
+    <header>
+      <a class="brand" href="/" aria-label="BOOP home"><img src="/static/icon.svg" alt="" width="40" height="40"><span>boop<span class="brand-dot">.</span></span></a>
+      <div class="privacy"><span class="dot"></span> ON THIS LAPTOP <span class="privacy-detail">No account. No cloud.</span></div>
+    </header>
+    <div id="notice" class="notice" role="status" hidden></div>
+    <section id="today" class="page">
+<div class="page-heading"><div><p class="eyebrow">A CLEARER PICTURE</p><h1>Your day.</h1></div><label>Viewing day<input id="dayDate" type="date"></label></div>
+    <section class="metrics live-strip" aria-label="Current readings">
+      <article class="metric heart"><div class="metric-title"><span>HEART RATE</span><span id="liveBadge" class="live-indicator">WAITING</span></div><div class="value"><span id="heartRate">—</span><small>bpm</small></div><p id="hrDetail">A live reading will appear after connection.</p></article>
+      <article class="metric"><div class="metric-title"><span>STRAP BATTERY</span><span class="metric-icon">↗</span></div><div class="value"><span id="battery">—</span><small>%</small></div><div class="battery-track"><div id="batteryFill"></div></div><p id="batteryDetail">Read directly from the strap.</p></article>
+      <article class="metric"><div class="metric-title"><span>LIVE HRV</span><span class="metric-icon">∿</span></div><div class="value"><span id="hrv">—</span><small>ms</small></div><p id="rrDetail">Waiting for beat-to-beat intervals.</p></article>
+      <article class="metric"><div class="metric-title"><span>SAVED READINGS</span><span class="metric-icon">⌁</span></div><div class="value"><span id="readings">0</span></div><p id="savedDetail">Your recording starts when connected.</p></article>
+    </section>
+    <div id="baselineStatus" class="baseline-strip" aria-live="polite">Gathering your daily picture…</div><div id="dailyCards"></div>
+    <section class="chart-panel">
+      <div class="panel-heading"><div><p class="eyebrow">THE RHYTHM OF YOUR DAY</p><h2>Heart rate over time</h2></div><div class="range" aria-label="Chart time range"><button class="selected" data-hours="1">1 hour</button><button data-hours="24">24 hours</button><button data-hours="168">7 days</button></div></div>
+      <div class="chart-wrap"><svg id="chart" viewBox="0 0 1100 265" role="img" aria-label="Recorded heart rate chart"></svg><div id="chartEmpty" class="chart-empty">Your first readings will start the line.<span>BOOP keeps recording while it’s running and the strap is connected.</span></div></div>
+      <div class="chart-footer"><span><i class="legend"></i> Recorded heart rate</span><span id="chartCount">0 points · Brisbane time</span></div>
+    </section>
+    <details class="today-connection"><summary>Strap connection & pairing details</summary>      <aside class="connection">
+        <div class="connection-top"><span class="small-label">YOUR STRAP</span><span id="connectionBadge" class="badge">DISCONNECTED</span></div>
+        <h2 id="deviceName">BOOP strap</h2>
+        <p id="connectionDetail">Keep your strap nearby and your phone’s Bluetooth off while connecting.</p>
+        <div class="buttons"><button id="connect" class="primary">Connect BOOP</button><button id="scan" class="secondary">Scan</button><button id="disconnect" class="secondary" hidden>Disconnect</button></div>
+        <div id="devices" aria-live="polite"></div>
+        <p class="device-meta" id="deviceMeta">Bluetooth connects directly to your strap.</p>
+      </aside></details>
+    <section class="lower">
+      <article class="history-panel">
+        <div class="panel-heading"><div><p class="eyebrow">ALREADY ON YOUR STRAP</p><h2>Bring your history home.</h2></div><button id="sync" class="primary" disabled>Sync history <span>↓</span></button><button id="stopSync" class="secondary" hidden>Stop sync</button></div>
+        <p class="body-copy">Copy stored readings to this laptop. Each chunk is saved before the strap can clear its copy. Keep a database backup for your records.</p>
+        <div class="sync-status"><span id="syncDot" class="dot muted"></span><span id="syncStatus">Connect your strap to sync its stored history.</span></div>
+        <p id="historyNote" class="subtle"></p>
+        <div class="table-wrap"><table><thead><tr><th>DAY</th><th>READINGS</th><th>AVG HR</th><th>HR RANGE</th></tr></thead><tbody id="days"><tr><td colspan="4" class="table-empty">Recorded days will appear here.</td></tr></tbody></table></div>
+      </article>
+      <aside class="data-panel"><p class="eyebrow">YOURS TO KEEP</p><h2>Local by design.</h2><p class="body-copy">Your data is stored in a SQLite file on this laptop. BOOP works without an internet connection.</p><a class="download" href="/export/csv"><span>Export readings <small>CSV · for spreadsheets</small></span><span>↗</span></a><a class="download" href="/export/sqlite"><span>Back up database <small>SQLite · includes original data</small></span><span>↗</span></a><p class="subtle" id="storageSize">Waiting for local storage.</p><details><summary>Connection log</summary><div id="log" class="log"></div></details></aside>
+    </section>
+    </section>
+<div id="dashboardPages"></div>
+    <footer><p>Your body, your data. BOOP runs on this laptop.<br>Local estimates use NOOP guidance and require sufficient data. Imported scores retain their source.</p><button id="shutdown" class="text-button">Quit BOOP</button></footer>
+  </main>
+</body>
+</html>

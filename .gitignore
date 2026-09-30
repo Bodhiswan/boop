@@ -1,0 +1,34 @@
+.venv/
+data/
+.runtime/
+reference/
+__pycache__/
+*.pyc
+.pytest_cache/
+output/
+
+# Local records, exports, credentials and machine settings never belong in Git.
+*.sqlite*
+*.db
+*.db-*
+*.boopbak
+*.noopbak
+*.log
+*.csv
+*.xlsx
+*.fit
+*.gpx
+*.tcx
+*.zip
+*.pdf
+.env
+.env.*
+*.pem
+*.key
+settings.json
+.DS_Store
+Thumbs.db
+
+# Reviewed, licensed upstream examples are the only bundled export fixtures.
+!vendor/noop/test-fixtures/*.csv
+!vendor/noop/test-fixtures/*.xlsx
