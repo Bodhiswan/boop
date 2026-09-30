@@ -4,6 +4,33 @@ Open **BOOP** on your desktop or **Start BOOP.cmd**. The dashboard is at [127.0.
 
 BOOP runs on Windows, reads your BOOP strap directly over Bluetooth, and stores its readings and your entries on this laptop. No account is required. The optional Coach also runs locally using Ollama.
 
+## Screenshots
+
+These screenshots show the real dashboard using **synthetic demo data**. Personal recordings and paired-device identifiers are not included. [Reproduce the preview](docs/screenshots/README.md).
+
+![BOOP Today dashboard with grouped readings, compact daily metrics and a heart-rate chart](docs/screenshots/today.jpg)
+
+<details>
+<summary>Sleep, activity, health and breathing tools</summary>
+
+### Sleep
+
+![BOOP Sleep page with a synthetic sleep timeline and nightly readings](docs/screenshots/sleep.jpg)
+
+### Activity
+
+![BOOP Activity page with a synthetic workout, heart-rate zones and training context](docs/screenshots/activity.jpg)
+
+### Health · dark appearance
+
+![BOOP Health page in dark appearance with compact vital readings](docs/screenshots/health-dark.jpg)
+
+### Breathing tools
+
+![BOOP breathing tools with local pacing controls](docs/screenshots/tools.jpg)
+
+</details>
+
 ## Install
 
 Use Windows with Bluetooth LE and Python 3.11 or newer on your PATH. In PowerShell:

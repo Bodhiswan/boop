@@ -1,13 +1,17 @@
 """Render real BOOP views against disposable local data; no Bluetooth or OS actions."""
 import asyncio
+import argparse
 from pathlib import Path
 import sys
 import tempfile
+import time
+import math
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from aiohttp import web
+import boop
 from analytics import AnalyticsService
 from api import FeatureAPI
 from boop import Manager, make_app
@@ -31,17 +35,39 @@ class OfflineManager(Manager):
     async def send(self, *args, **kwargs):
         raise ValueError("Hardware actions are disabled in the isolated QA preview")
 
+    async def status(self):
+        if getattr(self,'synthetic_demo',False):
+            now=time.time()
+            self.rr.clear()
+            for i in range(250):
+                stamp=now-(249-i)*.86
+                self.rr.append((int(stamp*1000),860+48*math.sin(stamp*math.pi/2)))
+        value=await super().status()
+        if getattr(self,'synthetic_demo',False):
+            value.update(hr=70,hr_age_s=0,battery=78,synthetic_demo=True,
+                         phase='Synthetic demo samples · no Bluetooth connection')
+        return value
 
-async def main():
+
+async def main(demo=False,port=8766):
     with tempfile.TemporaryDirectory(prefix="boop-qa-") as directory:
+        # Legacy SQLite export uses this module-level path. Keep it disposable
+        # even though the offline manager is never started.
+        boop.DATA=Path(directory)/'data'
         manager = OfflineManager(Store(Path(directory)/"data"/"whoop.sqlite"))
         features = FeatureStore(manager.store)
+        if demo:
+            from screenshot_demo import seed_demo
+            seed_demo(manager.store,features,manager.address)
+            manager.name='Synthetic demo · no strap'
+            manager.phase='Synthetic demo · Bluetooth disabled'
+            manager.synthetic_demo=True
         manager.features = features
         manager.companion = Companion(manager, features)
         stop = asyncio.Event()
         api = FeatureAPI(manager, features, AnalyticsService(manager.store), manager.companion)
         api.root = Path(directory)
-        app = make_app(manager, stop, 8766, api)
+        app = make_app(manager, stop, port, api)
 
         @web.middleware
         async def qa_label(request, handler):
@@ -49,6 +75,9 @@ async def main():
                 html = (ROOT/"web/index.html").read_text(encoding="utf-8")
                 html = html.replace("BOOP · Your body, your data", "BOOP · Isolated QA preview")
                 html = html.replace("Your body, your data.", "Isolated QA · disposable data.")
+                if demo:
+                    html=html.replace('Isolated QA preview','Synthetic demo data')
+                    html=html.replace('Isolated QA · disposable data.','Synthetic demo data · no strap.')
                 return web.Response(text=html, content_type="text/html")
             return await handler(request)
 
@@ -78,8 +107,8 @@ async def main():
         app.router.add_get('/qa/responsive.css',preview_style)
         runner = web.AppRunner(app)
         await runner.setup()
-        await web.TCPSite(runner, "127.0.0.1", 8766).start()
-        print("Isolated BOOP QA preview http://127.0.0.1:8766; Bluetooth and OS actions disabled", flush=True)
+        await web.TCPSite(runner, "127.0.0.1", port).start()
+        print(f"Isolated BOOP {'synthetic demo' if demo else 'QA preview'} http://127.0.0.1:{port}; Bluetooth and OS actions disabled", flush=True)
         try:
             await stop.wait()
         finally:
@@ -88,4 +117,9 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--demo',action='store_true',help='Populate disposable synthetic screenshot examples')
+    parser.add_argument('--port',type=int,default=8766)
+    args=parser.parse_args()
+    if not 1024<=args.port<=65535:parser.error('Choose port 1024–65535')
+    asyncio.run(main(args.demo,args.port))
