@@ -375,9 +375,15 @@ class Manager:
                         self._sync_active = False
                         self._sync_result = f"History saved · {self._sync_count:,} records received"
                         self.log(self._sync_result)
-                        await asyncio.to_thread(self.store.backup, DATA / "last-sync-backup.sqlite")
+                        try:
+                            await asyncio.to_thread(self.store.backup, DATA / "last-sync-backup.sqlite")
+                        except Exception as exc:
+                            self.log(f"Post-sync backup failed; recording continues: {exc}")
                         if self.connected:
-                            await self.arm_live()
+                            try:
+                                await self.arm_live()
+                            except Exception as exc:
+                                self.log(f"Live stream re-arm interrupted; recording continues: {exc}")
                 self.queue.task_done()
             # Retain a whole history chunk so its raw archive and database commit
             # both cover every record before an ACK can permit strap reclamation.
@@ -545,7 +551,13 @@ def make_app(manager, stop_event, port=8765, feature_api=None):
 
     async def series(request):
         hours = min(720, max(.05, float(request.query.get("hours", 1))))
-        return web.json_response(await asyncio.to_thread(manager.store.series, manager.address, hours))
+        points=min(12000,max(1200,int(request.query.get('points',1200))))
+        if 'start' in request.query or 'end' in request.query:
+            try:start,end=int(request.query['start']),int(request.query['end'])
+            except (KeyError,ValueError):raise ValueError('Provide sleep graph start and end in milliseconds') from None
+            if not 0<start<end or end-start>48*3600000:raise ValueError('Sleep graph interval must be between zero and 48 hours')
+            return web.json_response(await asyncio.to_thread(manager.store.series,manager.address,hours,start,end))
+        return web.json_response(await asyncio.to_thread(manager.store.series, manager.address, hours,max_points=points))
 
     async def days(request):
         return web.json_response(await asyncio.to_thread(manager.store.days, manager.address))

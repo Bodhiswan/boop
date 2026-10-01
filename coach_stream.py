@@ -93,6 +93,7 @@ async def provider_events(content,provider):
             delta=mapping(first,'delta').get('content','') or ''
             reason=first.get('finish_reason')
             if reason:
+                if reason=='length':raise ValueError('Coach reply reached the output token limit. Increase the response budget or lower reasoning effort; this partial reply was not saved.')
                 if reason!='stop':raise ValueError('Coach reply did not finish normally')
                 stop_reason=reason;finished=True
         if not isinstance(delta,str):raise ValueError('Coach provider returned a non-text reply')

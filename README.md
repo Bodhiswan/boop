@@ -2,7 +2,15 @@
 
 Open **BOOP** on your desktop or **Start BOOP.cmd**. The dashboard is at [127.0.0.1:8765](http://127.0.0.1:8765/). It reconnects to your saved strap and keeps recording when you close the browser.
 
-BOOP runs on Windows, reads your BOOP strap directly over Bluetooth, and stores its readings and your entries on this laptop. No account is required. The optional Coach also runs locally using Ollama.
+BOOP runs on Windows, reads your BOOP strap directly over Bluetooth, and stores its readings and your entries on this laptop. No account is required for local use. The optional Coach supports local Ollama and explicitly configured remote providers, including OpenRouter.
+
+## Terminal and daily journal
+
+Open **Terminal** for the compact dashboard: live HR with 10-minute, 1-hour and 24-hour windows, a red 30-day average by time of day, sleep stages and overnight HR, and a fixed 14-night sleep-timing chart with estimated debt. Demo history is synthetic, stays in the browser and is excluded from Coach evidence.
+
+**Insights** provides a configurable journal, custom tracking items, optional Cycle observations and comparisons against measured history. Answers use one-click toggles; previous daily answers are drafts until **Confirm** explicitly submits them. Unlogged answers remain unknown. The terminal journal has its own date picker and Today/Yesterday shortcuts, so next-morning entries can be assigned to the preceding day. Unsaved daily answers survive date changes within the open page. Timed events preserve their occurrence time separately from when they were entered; entries can be corrected and removals undone.
+
+Habit comparisons show observed dates, counts and missing coverage, with a learning state for sparse history. They describe associations rather than causes. OpenRouter setup lives in Settings; the adaptive Coach requests relevant metric context and reuses it while the question scope remains covered.
 
 ## Screenshots
 
@@ -103,7 +111,7 @@ Everything is beside the app:
 - `data/boop.log` and server logs: local diagnostics; secret-bearing hello responses are discarded before persistence.
 - `.runtime/`: installed local Ollama CLI and model weights.
 
-Download a database snapshot rather than copying a live SQLite file without its WAL. The app server binds only `127.0.0.1` and rejects foreign-origin mutations. Assets, charts and fonts are local. No telemetry or automatic health-data uploads are present. Remote Coach requests send your question, recent conversation and seven days of allowlisted metrics/coverage with explicit per-request consent. Provider keys are not stored or exported. Scheduled briefs use the offline local provider, require both the Coach master and schedule switches, and need BOOP running; notification delivery also respects notification opt-in and quiet hours.
+Download a database snapshot rather than copying a live SQLite file without its WAL. The app server binds only `127.0.0.1` and rejects foreign-origin mutations. Assets, charts and fonts are local. No telemetry or automatic health-data uploads are present. Remote Coach requests send your question, recent conversation and relevant allowlisted metrics/coverage with explicit per-request consent. The adaptive Coach selects a bounded date range and reuses previously supplied evidence when it covers the question. Provider keys are not stored or exported. Scheduled briefs use the offline local provider, require both the Coach master and schedule switches, and need BOOP running; notification delivery also respects notification opt-in and quiet hours.
 
 Coach remote endpoints require HTTPS and requests never follow redirects. Compatible-server local mode is restricted to `127.0.0.1`, `localhost` or `::1`; a LAN endpoint is external and requires HTTPS, consent and a request-only key. Custom authentication and supplemental system prompts apply only to the request and cannot override metric/missing-data rules. Cancel closes the active stream; failed or cancelled partial replies are not saved as completed conversation turns.
 

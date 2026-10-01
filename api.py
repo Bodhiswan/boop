@@ -33,6 +33,7 @@ from coach_history import BRIEF_QUESTION, CoachHistory
 from features import KINDS, MAX_BYTES, MAX_BACKUP_BYTES
 from reports import report_pdf, report_png, report_svg
 from insights import InsightsService
+from journal import JournalService, TZ as JOURNAL_TZ
 from fusion import fuse_day
 from workout_service import WorkoutService
 
@@ -65,6 +66,7 @@ class FeatureAPI:
         self._backup_service=None
         self._brief_retry_at=0
         self.insights_service=InsightsService(features,analytics)
+        self.journal_service=JournalService(features,analytics)
         self.workouts=WorkoutService(manager,features,analytics)
         manager.workouts=self.workouts
         self.root=Path(__file__).resolve().parent
@@ -88,6 +90,88 @@ class FeatureAPI:
             return await asyncio.to_thread(self.analytics.day,self.manager.address,request.query.get("date"),settings)
         count=min(366,max(1,int(request.query.get("days",30))))
         return await asyncio.to_thread(self.analytics.trends,self.manager.address,count,settings,request.query.get("date"))
+
+    async def terminal_sleep(self,request):
+        days=int(request.query.get('days',7))
+        if days not in (1,3,7,14,30):raise ValueError('Choose 1, 3, 7, 14 or 30 sleep days')
+        selected=request.query.get('date')
+        if selected:
+            try:datetime.strptime(selected,'%Y-%m-%d')
+            except ValueError:raise ValueError('Choose a valid sleep date') from None
+        settings=await asyncio.to_thread(self.features.settings)
+        device=self.manager.address
+        def collect():
+            import math
+            bundle=self.analytics.trends(device,days,settings,selected)
+            nights=[]
+            for day in bundle.get('days',[]):
+                main=(day.get('sleep') or {}).get('main') or {}
+                raw=(main.get('staging') or {}).get('value') or []
+                segments=[{k:s[k] for k in ('start','end','stage')} for s in raw if isinstance(s,dict)
+                    and isinstance(s.get('start'),(int,float)) and isinstance(s.get('end'),(int,float))
+                    and math.isfinite(s['start']) and math.isfinite(s['end']) and s['end']>s['start']
+                    and s.get('stage') in ('wake','awake','rem','light','deep')]
+                if not segments:continue
+                start=min(s['start'] for s in segments);end=max(s['end'] for s in segments)
+                if start<=0 or end-start>48*3600:continue
+                points=self.manager.store.series(device,start_ms=int(start*1000),end_ms=int(end*1000))
+                step=max(1,math.ceil(len(points)/240));reduced=[]
+                for offset in range(0,len(points),step):
+                    block=points[offset:offset+step]
+                    # Split around gaps before reducing so missing hours stay missing.
+                    if block[-1]['t']-block[0]['t']>max(120000,(end-start)*1000/120):
+                        reduced.extend({'t':p['t'],'hr':p['hr']} for p in (block[0],block[-1]))
+                    else:reduced.append({'t':block[0]['t'],'hr':sum(p['hr'] for p in block)/len(block)})
+                nights.append({'day':day.get('day'),'start':start,'end':end,'segments':segments,
+                    'total_sleep_min':main.get('total_sleep_min'),'sleep_debt_min':((day.get('sleep') or {}).get('debt') or {}).get('balance_min'),
+                    'need_min':((day.get('sleep') or {}).get('need_hours') or settings.get('sleep_goal_hours') or 8)*60,
+                    'rhr':(day.get('resting_hr') or {}).get('value'),'points':reduced})
+            return {'nights':nights,'requested_days':days}
+        return web.json_response(await asyncio.to_thread(collect))
+
+    async def terminal_rhythm(self,request):
+        from terminal_insights import day_rhythm
+        selected=request.query.get('date') or datetime.now().date().isoformat()
+        try:start=datetime.fromisoformat(selected+'T00:00:00+10:00').timestamp()
+        except ValueError:raise ValueError('Choose a valid rhythm date') from None
+        end=max(start,min(start+86400,time.time()))
+        device=self.manager.address
+        def collect():
+            rows,sensors,_=self.analytics._read(device,start,end)
+            hr,_,gravity=self.analytics._streams(rows,sensors)
+            return day_rhythm(hr,gravity,start,end)|{'day':selected}
+        return web.json_response(await asyncio.to_thread(collect))
+
+    async def terminal_motion(self,request):
+        from terminal_insights import motion_profile
+        hours=float(request.query.get('hours',1/6))
+        if hours not in (1/6,1,24):raise ValueError('Choose 10 minutes, 1 hour or 24 hours')
+        end=time.time();start=end-hours*3600;device=self.manager.address
+        bucket=10 if hours<1 else 60 if hours==1 else 900
+        def collect():
+            rows,sensors,_=self.analytics._read(device,start,end)
+            _,_,gravity=self.analytics._streams(rows,sensors)
+            return motion_profile(gravity,start,end,bucket)
+        return web.json_response(await asyncio.to_thread(collect))
+
+    async def terminal_hr_profile(self,request):
+        from terminal_insights import clock_profile
+        end=int(time.time()*1000)
+        points=await asyncio.to_thread(self.manager.store.series,self.manager.address,start_ms=end-30*86400000,end_ms=end,max_points=8640)
+        return web.json_response({'points':clock_profile(points,min_days=1),'days':30,'source':'Real observed HR; one vote per day per five-minute clock bin','observed_days':len({int((p['t']+10*3600000)//86400000) for p in points})})
+
+    async def terminal_baseline(self,request):
+        from terminal_insights import personal_baselines,clock_profile
+        selected=request.query.get('date') or datetime.now().date().isoformat()
+        try:datetime.strptime(selected,'%Y-%m-%d')
+        except ValueError:raise ValueError('Choose a valid baseline date') from None
+        settings=await asyncio.to_thread(self.features.settings)
+        bundle=await asyncio.to_thread(self.analytics.trends,self.manager.address,31,settings,selected)
+        result=personal_baselines(bundle,selected)
+        end=int(datetime.fromisoformat(selected+'T00:00:00+10:00').timestamp()*1000)
+        points=await asyncio.to_thread(self.manager.store.series,self.manager.address,start_ms=end-30*86400000,end_ms=end-1,max_points=8640)
+        result['hr_clock_profile']=clock_profile(points)
+        return web.json_response(result)
 
     async def day(self,request):
         settings=await asyncio.to_thread(self.features.settings)
@@ -139,6 +223,22 @@ class FeatureAPI:
     async def insights(self,request):
         result=await asyncio.to_thread(self.insights_service.bundle,self.manager.address,int(request.query.get("days",30)),self.features.settings(),request.query.get("date"))
         return web.json_response(result)
+
+    async def journal(self,request):
+        if request.method=='GET':
+            selected=request.query.get('date') or datetime.now(JOURNAL_TZ).date().isoformat()
+            return web.json_response(await asyncio.to_thread(self.journal_service.checkin,selected))
+        body=await self.json(request)
+        if body.get('action')=='configure':
+            return web.json_response({'items':await asyncio.to_thread(self.journal_service.configure,body)})
+        return web.json_response(await asyncio.to_thread(self.journal_service.save,body))
+
+    async def journal_insights(self,request):
+        from journal import TZ
+        selected=request.query.get('date') or datetime.now(TZ).date().isoformat()
+        data=await asyncio.to_thread(self.journal_service.summary,self.manager.address,selected,
+            int(request.query.get('days',30)),request.query.get('item'),request.query.get('metric','sleep_min'),int(request.query.get('lag',1)),request.query.get('mode','auto'),request.query.get('period','week'))
+        return web.json_response(data)
 
     async def settings(self,request):
         if request.method=="GET":
@@ -257,6 +357,45 @@ class FeatureAPI:
         # Explicit refresh sends authentication only, never the daily bundle.
         return web.json_response(await self.coach.models(await self.json(request)))
 
+    async def coach_key(self,request):
+        return web.json_response(await self.coach.verify_key(await self.json(request)))
+
+    async def adaptive_bundle(self,days,through):
+        settings=await asyncio.to_thread(self.features.settings)
+        return await asyncio.to_thread(self.analytics.trends,self.manager.address,days,settings,through)
+
+    async def adaptive_live(self):
+        status=await self.manager.status()
+        live={'connected':status.get('connected'),'battery_percent':status.get('battery')}
+        if status.get('connected'):
+            if status.get('hr_age_s') is not None and status['hr_age_s']<=15:live['hr_bpm']=status.get('hr')
+            live['rmssd_ms']=status.get('rmssd')
+        return live
+
+    def adaptive_events(self,body,settings):
+        from adaptive_coach import AdaptiveCoach
+        from companion import zone
+        if body.get('save') is not False:raise ValueError('Terminal adaptive conversation is temporary; set save to false')
+        selected=body.get('context_date')
+        if selected is not None:
+            if not isinstance(selected,str):raise ValueError('Use a valid context date')
+            try:datetime.strptime(selected,'%Y-%m-%d')
+            except ValueError:raise ValueError('Use a valid context date') from None
+        if not hasattr(self,'_adaptive_coach'):
+            self._adaptive_coach=AdaptiveCoach(self.coach,self.adaptive_bundle,self.adaptive_live)
+        return self._adaptive_coach.stream(body,self.manager.address,datetime.now(zone(settings['timezone'])).date().isoformat())
+
+    async def coach_live_context(self,body,bundle):
+        import re
+        if re.search(r'live|current|now|heart rate|\bhr\b|pulse|battery',str(body.get('question','')),re.I):
+            status=await self.manager.status()
+            live={'connected':status.get('connected')}
+            if status.get('connected'):
+                if status.get('hr_age_s') is not None and status['hr_age_s']<=15:live['hr_bpm']=status.get('hr')
+                live['rmssd_ms']=status.get('rmssd')
+            live['battery_percent']=status.get('battery')
+            bundle['live']=live
+
     async def coach_ask(self,request):
         body=await self.json(request)
         return web.json_response(await self.ask_coach(body))
@@ -269,11 +408,15 @@ class FeatureAPI:
         if 'save' in body and type(body['save']) is not bool:
             raise ValueError('Save conversation must be true or false')
         settings=await asyncio.to_thread(self.features.settings)
-        bundle=await asyncio.to_thread(self.analytics.trends,self.manager.address,7,settings)
-        from companion import zone
-        current=datetime.now(zone(settings['timezone']))
-        history=await asyncio.to_thread(self.coach_history.context,current,8)
-        events=self.coach.stream(body,bundle,history)
+        if body.get('context_mode')=='adaptive':
+            events=self.adaptive_events(body,settings)
+        else:
+            bundle=await asyncio.to_thread(self.analytics.trends,self.manager.address,7,settings)
+            await self.coach_live_context(body,bundle)
+            from companion import zone
+            current=datetime.now(zone(settings['timezone']))
+            history=await asyncio.to_thread(self.coach_history.context,current,8)
+            events=self.coach.stream(body,bundle,history)
         # Validate consent/model/connection before committing an SSE response.
         try:
             first=await anext(events)
@@ -317,7 +460,12 @@ class FeatureAPI:
         if 'save' in body and type(body['save']) is not bool:
             raise ValueError('Save conversation must be true or false')
         settings=await asyncio.to_thread(self.features.settings)
+        if body.get('context_mode')=='adaptive':
+            async for event in self.adaptive_events(body,settings):
+                if event['type']=='done':return event['result']
+            raise ValueError('Adaptive Coach returned no completed answer')
         bundle=await asyncio.to_thread(self.analytics.trends,self.manager.address,7,settings)
+        await self.coach_live_context(body,bundle)
         from companion import zone
         current=datetime.now(zone(settings['timezone']))
         history=await asyncio.to_thread(self.coach_history.context,current,8)
@@ -704,7 +852,7 @@ class FeatureAPI:
         raise web.HTTPNotFound()
 
     def register(self,app):
-        routes=[web.get("/api/day",self.day),web.get("/api/trends",self.trends),web.get("/api/insights",self.insights),
+        routes=[web.get("/api/day",self.day),web.get("/api/journal",self.journal),web.post("/api/journal",self.journal),web.get("/api/journal/insights",self.journal_insights),web.get('/api/terminal/rhythm',self.terminal_rhythm),web.get('/api/terminal/motion',self.terminal_motion),web.get('/api/terminal/sleep',self.terminal_sleep),web.get('/api/terminal/baseline',self.terminal_baseline),web.get('/api/terminal/hr-profile',self.terminal_hr_profile),web.get("/api/trends",self.trends),web.get("/api/insights",self.insights),
                 web.get("/api/settings",self.settings),web.post("/api/settings",self.settings),
                 web.get("/api/records/{kind}",self.records),web.post("/api/records/{kind}",self.records),
                 web.delete("/api/records/{kind}/{id}",self.records),web.post("/api/records/{kind}/{id}/undo",self.records),
@@ -713,7 +861,7 @@ class FeatureAPI:
                 web.get("/api/workouts",self.workout_action),web.post("/api/workouts",self.workout_action),web.get("/api/lift",self.lift_action),web.post("/api/lift",self.lift_action),
                 web.post("/api/device",self.device),web.get("/api/automations",self.automations),web.post("/api/automations",self.automations),
                 web.get("/api/automations/checkin",self.checkin),web.post("/api/automations/checkin",self.checkin),
-                web.get("/api/coach/options",self.coach_options),web.post("/api/coach/models",self.coach_models),web.post("/api/coach",self.coach_ask),web.post("/api/coach/stream",self.coach_stream),
+                web.get("/api/coach/options",self.coach_options),web.post("/api/coach/models",self.coach_models),web.post("/api/coach/key",self.coach_key),web.post("/api/coach",self.coach_ask),web.post("/api/coach/stream",self.coach_stream),
                 web.get("/api/coach/history",self.coach_transcript),web.post("/api/coach/history",self.coach_transcript),
                 web.get("/api/coach/brief",self.coach_brief),web.post("/api/coach/brief",self.coach_brief),
                 web.get('/api/diagnostics/schedule',self.diagnostic_schedule),web.post('/api/diagnostics/schedule',self.diagnostic_schedule),web.get('/api/diagnostics/export',self.diagnostic_download),

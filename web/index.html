@@ -7,10 +7,16 @@
   <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/compact.css">
+  <link rel="stylesheet" href="/static/terminal.css">
+  <link rel="stylesheet" href="/static/journal.css">
   <script defer src="/static/app.js"></script>
   <script defer src="/static/coach-stream.js"></script>
   <script defer src="/static/dashboard.js"></script>
   <script defer src="/static/workout-ui.js"></script>
+  <script defer src="/static/journal-ui.js"></script>
+  <script defer src="/static/terminal-math.js"></script>
+  <script defer src="/static/terminal-patterns.js"></script>
+  <script defer src="/static/terminal.js"></script>
 </head>
 <body>
   <aside class="sidebar"><a class="brand" href="#today"><img src="/static/icon.svg" alt="" width="36" height="36"><span>boop.</span></a><p class="sidebar-note">Your body, your data.</p><nav id="navigation" aria-label="Main pages"></nav><div class="sidebar-bottom"><span class="dot"></span> On this laptop<br><small>BOOP · local companion</small></div></aside><main>
@@ -52,6 +58,45 @@
       <aside class="data-panel"><p class="eyebrow">YOURS TO KEEP</p><h2>Local by design.</h2><p class="body-copy">Your data is stored in a SQLite file on this laptop. BOOP works without an internet connection.</p><a class="download" href="/export/csv"><span>Export readings <small>CSV · for spreadsheets</small></span><span>↗</span></a><a class="download" href="/export/sqlite"><span>Back up database <small>SQLite · includes original data</small></span><span>↗</span></a><p class="subtle" id="storageSize">Waiting for local storage.</p><details><summary>Connection log</summary><div id="log" class="log"></div></details></aside>
     </section>
     </section>
+<section id="terminal" class="page" hidden aria-label="BOOP terminal">
+  <div class="term-header"><h1>BOOP / TERMINAL</h1><span id="termPhase">READING STATUS…</span></div>
+  <div class="term-controls">
+    <button type="button" id="termScan">[ Scan ]</button><button type="button" id="termConnect" disabled>[ Connect ]</button><button type="button" id="termDisconnect" disabled>[ Disconnect ]</button><button type="button" id="termSync" disabled>[ Sync history ]</button><button type="button" id="termStop" disabled>[ Stop sync ]</button><button type="button" id="termRefresh">[ Refresh ]</button>
+    <label>DAY <input type="date" id="termDate"></label>
+  </div>
+  <div id="termDevices"></div>
+  <div class="term-demo"><label><input id="termDemoSleep" type="checkbox" checked> Demo history</label><span id="termDemoNote">Synthetic comparisons, RHR, RHRV & debt · not saved or sent to AI</span></div>
+  <button type="button" id="termBriefing" class="term-briefing" aria-label="Inspect daily briefing">Learning your personal baseline…</button>
+  <div class="term-grid term-stats-grid">
+    <section id="termLivePanel" class="term-panel term-readings" hidden><div id="termLive"></div></section>
+    <section id="termDailyPanel" class="term-panel term-readings" hidden><div id="termDaily"></div><p id="termCoverage" class="term-soft" hidden></p></section>
+  </div>
+  <div class="term-grid term-charts-grid">
+    <section id="termHRPanel" class="term-panel term-graph"><div class="term-graph-heading"><div id="termHRPeriod" class="term-periods" role="group" aria-label="Heart rate time period"><button type="button" data-hr-period="0" aria-pressed="true">10 min</button><button type="button" data-hr-period="1" aria-pressed="false">1 hour</button><button type="button" data-hr-period="2" aria-pressed="false">24 hours</button></div></div><svg id="termHRGraph" viewBox="0 0 500 95" role="img" aria-label="Recorded heart rate"></svg><p id="termHRRange" class="term-soft" hidden></p></section>
+    <section id="termSleepPanel" class="term-panel term-graph" hidden><div class="term-graph-heading"><select id="termNightFocus" aria-label="Highlight sleep night"></select><select id="termNightCompare" aria-label="Compare sleep night"><option value="">Compare…</option></select><button id="termSleepAlign" type="button" aria-label="Change sleep alignment">[ Onset ]</button></div><svg id="termSleepGraph" viewBox="0 0 500 95" role="img" aria-label="Estimated sleep stage timeline"></svg><svg id="termSleepHRGraph" role="img" aria-label="Heart rate during sleep" hidden></svg><div id="termSleepTimes" class="term-sleep-times"><span id="termSleepStart"></span><span id="termSleepRange"></span><span id="termSleepEnd"></span></div><p id="termSleepComparison" class="term-comparison-note" hidden></p></section>
+  </div>
+  <template id="termPatternPanels">
+    <section id="termJournalPanel" class="term-panel term-pattern-panel" aria-label="Daily insights and journal">
+      <div class="term-graph-heading"><h2>Insights / journal</h2><span class="term-source-tag">LOCAL</span></div>
+      <div class="term-journal-date-controls" id="termJournalDateControls"><input id="termJournalDate" type="date" aria-label="Journal entry date"><button type="button" data-journal-day="-1">Yesterday</button><button type="button" data-journal-day="0">Today</button></div>
+      <div id="termJournalContent">Reading your journal...</div>
+    </section>
+    <section id="termTimingPanel" class="term-panel term-graph term-pattern-panel" aria-label="Sleep timing across nights">
+      <div class="term-graph-heading"><h2>Sleep timing</h2><span id="termTimingSource" class="term-source-tag"></span><span class="term-fixed-window">14 nights</span></div>
+      <svg id="termTimingGraph" role="img" aria-label="Bedtime and wake time by night"></svg>
+      <div class="term-pattern-key"><span class="term-key-bed">● Bed</span><span class="term-key-hr">● Wake</span><span style="color:#fa7373">— debt</span><span>bars ± goal</span></div>
+      <p id="termTimingSummary" class="term-pattern-summary">Waiting for sleep history…</p>
+    </section>
+  </template>
+  <div id="termInspect" class="term-inspect" role="status" aria-live="polite">Hover or focus a graph to inspect linked readings · arrows scrub · Esc clears</div>
+  <section id="termEvidencePanel" class="term-evidence" hidden aria-label="Observation details"><div class="term-evidence-heading"><strong id="termEvidenceTitle"></strong><button id="termEvidenceClose" type="button" aria-label="Close observation details">[ × ]</button></div><div id="termEvidenceBody"></div></section>
+  <details id="termExperiments" class="term-experiments"><summary>Experiments <span id="termExperimentCount"></span></summary><div id="termExperimentList"></div><form id="termExperimentForm"><label>Question<input id="termExperimentName" required maxlength="120" placeholder="Does an earlier bedtime change my sleep?"></label><label>Measure<select id="termExperimentMetric"><option value="sleep_min">Sleep minutes</option><option value="resting_hr">Resting HR</option><option value="hrv">Resting HRV</option><option value="effort">Effort</option></select></label><button type="submit">[ Start 7 + 7 days ]</button></form><p>Use the first seven days as baseline, then try your chosen habit for seven days. Log it in your journal; comparisons describe association.</p><a href="#insights">Journal & experiment details</a></details>
+  <details id="termAISettings" class="term-panel term-ai-settings"><summary>OPENROUTER SETUP</summary><div class="term-ai-fields"><label>API key<input id="termAIKey" type="password" autocomplete="off" placeholder="OpenRouter API key"></label><label>Model<input id="termAIModel" type="text" placeholder="provider/model"></label><button id="termVerifyKey" type="button">[ Verify key ]</button><button id="termModels" type="button">[ Load models ]</button></div><p id="termAuthStatus" role="status"></p><datalist id="termModelList"></datalist><p class="term-soft">Key stays in this page until reload. Replies use your OpenRouter account.</p><label class="term-ai-consent"><input id="termAIConsent" type="checkbox"> For this page session, let OpenRouter plan the context needed for my questions, then receive the relevant real health summaries and conversation. Planning and answering are separate model requests.</label></details>
+  <div class="term-prompt"><label for="termCommand">boop&gt;</label><select id="termPromptMode" aria-label="Terminal input mode"><option value="ai">AI</option><option value="commands">Commands</option></select><input id="termCommand" type="text" autocomplete="off" spellcheck="false" placeholder="Ask AI, or type help" aria-describedby="termOutput"><button type="button" id="termRun">[ Send ]</button><button type="button" id="termAICancel" hidden>[ Cancel ]</button></div>
+  <div id="termOutput" role="status" aria-live="polite">Configure OpenRouter in Settings. Type help for local commands.</div>
+  <div id="termAIReply" class="term-ai-reply" hidden aria-label="OpenRouter reply"></div><div id="termAISources" class="term-ai-sources" hidden></div>
+  <div class="term-foot term-soft"><span>LOCAL / Estimates require sufficient data. <a href="#settings">AI settings</a></span><span id="termUpdated">Waiting for local service</span></div>
+</section>
 <div id="dashboardPages"></div>
     <footer><p>Your body, your data. BOOP runs on this laptop.<br>Local estimates use NOOP guidance and require sufficient data. Imported scores retain their source.</p><button id="shutdown" class="text-button">Quit BOOP</button></footer>
   </main>

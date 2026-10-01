@@ -159,15 +159,16 @@ class Store:
         finally:
             conn.close()
 
-    def series(self, device: str | None, hours: float = 1) -> list[dict]:
-        start = int((time.time() - hours * 3600) * 1000)
+    def series(self, device: str | None, hours: float = 1, start_ms=None, end_ms=None, max_points=1200) -> list[dict]:
+        start = int(start_ms) if start_ms is not None else int((time.time() - hours * 3600) * 1000)
+        end = int(end_ms) if end_ms is not None else int(time.time()*1000)
         # Bucket long history so a full day remains responsive in the browser.
-        bucket = max(1000, int(hours * 3600000 / 1200))
+        bucket = max(1000, int((end-start) / min(12000,max(1200,int(max_points)))))
         conn = self.connect()
         try:
             clause = "AND device=?" if device else ""
-            args = (start, device) if device else (start,)
-            rows = conn.execute(f"SELECT MIN(timestamp_ms) AS t, ROUND(AVG(hr),1) AS hr, COUNT(*) AS n FROM readings WHERE timestamp_ms>=? AND hr IS NOT NULL {clause} GROUP BY timestamp_ms/{bucket} ORDER BY t", args)
+            args = (start,end,device) if device else (start,end)
+            rows = conn.execute(f"SELECT MIN(timestamp_ms) AS t, ROUND(AVG(hr),1) AS hr, COUNT(*) AS n FROM readings WHERE timestamp_ms>=? AND timestamp_ms<=? AND hr IS NOT NULL {clause} GROUP BY timestamp_ms/{bucket} ORDER BY t", args)
             return [dict(r) for r in rows]
         finally:
             conn.close()

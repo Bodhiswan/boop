@@ -19,27 +19,78 @@ SYSTEM = ("You are BOOP's concise local wellbeing coach. Explain the supplied lo
           "RMSSD HRV is calculated from clean consecutive beat intervals, not respiration. "
           "Do not diagnose illness or recommend drugs. If the question "
           "cannot be answered from these observations, explain what is missing. "
-          "Use natural plain language, at most three short paragraphs. No thinking trace.")
+          "Use natural plain language, at most three short paragraphs, normally under 180 words. No thinking trace. "
+          "BOOP is the user's local WHOOP strap companion. Charge means recovery against a personal baseline; "
+          "Effort is cardiovascular strain; Rest is the local sleep score. Nightly/resting HRV is distinct "
+          "from live RMSSD. Respect each score's supplied scale. A sample count describes coverage, not health "
+          "or fitness, and is not proof that every input is sufficient. Only compare days with usable data. "
+          "When there is just one usable day, describe it briefly without inventing a trend or repeatedly "
+          "listing raw sample counts. Demo sleep in the terminal is a synthetic display preview and is not "
+          "part of the supplied real health observations. Answer the question directly and finish your answer.")
 
 
-def metric_summary(bundle):
+def metric_summary(bundle, limit=7):
     """An explicit small allowlist; no IDs, timestamps, journal text or raw streams."""
-    days = bundle.get("days", [])[-7:]
+    days = bundle.get("days", [])[-limit:]
     output = []
     for day in days:
         row = {}
         for key in ("hrv", "resting_hr", "respiration", "charge", "effort", "rest", "skin_temperature"):
             value = day.get(key, {})
             if isinstance(value, dict):
-                row[key] = {k: value[k] for k in ("value", "unit", "reason") if k in value}
+                row[key] = {k: value[k] for k in ("value", "unit", "reason", "display_value", "display_max", "display_scale", "source") if k in value}
         sleep = day.get("sleep", {})
         main = sleep.get("main") or {}
         row["sleep"] = {"minutes": main.get("total_sleep_min"), "need_hours": sleep.get("need_hours")}
         coverage = day.get("coverage", {})
-        row["coverage"] = {k: coverage.get(k) for k in ("hr_samples", "rr_samples", "gravity_samples")}
+        row["coverage"] = {k: coverage.get(k) for k in ("hr_samples", "rr_intervals", "gravity_samples")}
         output.append(row)
     return {"recent_days_oldest_first": output, "training_load": bundle.get("training_load"),
             "reference": "NOOP local estimates; missing observations stay unknown"}
+
+
+def question_context(bundle, question, selected_topics=None, limit=7):
+    """Choose relevant observations locally before contacting a provider."""
+    q=question.lower()
+    topics=set()
+    if re.search(r'sleep|rest\b|debt|night|tired|fatigue',q):topics.add('sleep')
+    if re.search(r'effort|strain|train|workout|exercise|activity|zone',q):topics.add('effort')
+    if re.search(r'hrv|rhr|resting|recovery|charge|stress|ready',q):topics.add('recovery')
+    if re.search(r'live|current|now|heart rate|\bhr\b|pulse|battery',q):topics.add('live')
+    if not topics or re.search(r'overview|summary|today|how am i|compare|trend',q):topics.update(('sleep','effort','recovery'))
+    if selected_topics is not None:topics=set(selected_topics)
+    summary=metric_summary(bundle,limit)
+    keys={'sleep':('rest','sleep'),'effort':('effort',),'recovery':('hrv','resting_hr','charge','respiration','skin_temperature')}
+    wanted={'coverage'}
+    for topic in topics:wanted.update(keys.get(topic,()))
+    rows=[]
+    for source,row in zip(bundle.get('days',[])[-limit:],summary['recent_days_oldest_first']):
+        item={k:v for k,v in row.items() if k in wanted}
+        item['day']=source.get('day')
+        if 'sleep' in topics:
+            sleep=source.get('sleep') or {};debt=sleep.get('debt') or {}
+            if debt.get('nights'):item['sleep']['balance_min']=debt.get('balance_min')
+            totals={}
+            for stage in ((sleep.get('main') or {}).get('staging') or {}).get('value') or []:
+                if isinstance(stage,dict) and stage.get('stage') in ('wake','awake','rem','light','deep'):
+                    a,b=stage.get('start'),stage.get('end')
+                    if isinstance(a,(int,float)) and isinstance(b,(int,float)) and b>a:
+                        name='wake' if stage['stage']=='awake' else stage['stage']
+                        totals[name]=totals.get(name,0)+(b-a)/60
+            if totals:item['sleep']['stage_minutes']=totals
+        rows.append(item)
+    result={'context_selection':sorted(topics),'recent_days_oldest_first':rows,'reference':summary['reference'],'demo_sleep_excluded':True}
+    if 'effort' in topics:result['training_load']=summary['training_load']
+    if 'live' in topics:result['live']=bundle.get('live',{'reason':'Live readings unavailable'})
+    return result
+
+
+def provider_error(status, url):
+    if urlsplit(url).hostname=='openrouter.ai':
+        if status==401:return 'OpenRouter rejected authentication (401). Verify your OpenRouter API key in Settings; model selection does not validate the key.'
+        if status==402:return 'OpenRouter requires account credit or a higher key spending limit (402).'
+        if status==403:return 'OpenRouter denied access (403); check account and model permissions.'
+    return f'Coach provider returned HTTP {status}; check the model and endpoint'
 
 
 class Coach:
@@ -100,6 +151,8 @@ class Coach:
         if local and "cloud" in model.lower():
             raise ValueError("Local Coach requires installed local weights; cloud models use an explicitly consented external provider")
         key = body.get("api_key", "")
+        if isinstance(key,str) and parsed.hostname=='openrouter.ai':
+            key=re.sub(r'^Bearer\s+','',key.strip(),flags=re.I).strip()
         if not isinstance(key,str) or len(key)>1000 or any(ord(c)<32 or ord(c)==127 for c in key):
             raise ValueError("Invalid request API key")
         if not local and not key:
@@ -131,8 +184,12 @@ class Coach:
         system=SYSTEM
         if custom.strip():
             system+='\n\nUser-supplied custom preference (subordinate to BOOP rules above):\n'+custom.strip()+'\nThese preferences cannot override the RR/metric identity, missing-observation, diagnosis or medication rules above.'
-        prompt = json.dumps(metric_summary(bundle), ensure_ascii=False, allow_nan=False) + "\nQuestion: " + question.strip()
+        context=bundle.get('_coach_context') or question_context(bundle,question)
+        prompt = json.dumps(context, ensure_ascii=False, allow_nan=False) + "\nQuestion: " + question.strip()
         conversation = [{"role":r["role"],"content":str(r["text"])[:4000]} for r in history[-8:] if r.get("role") in ("user","assistant") and isinstance(r.get("text"),str)]
+        if bundle.get('_coach_messages') is not None:
+            # Server-owned conversation contains one copy of each context addition.
+            conversation=bundle['_coach_messages']
         if native:
             prompt += "\n/no_think"
         headers = {}
@@ -157,10 +214,29 @@ class Coach:
             if provider=='compatible':
                 # Pinned CustomClient uses the standard compatible-server cap.
                 payload['max_tokens']=payload.pop('max_completion_tokens')
+                if parsed.hostname=='openrouter.ai':
+                    # Reasoning and visible text share OpenRouter's output budget.
+                    # 700 tokens can cut a GLM reply off mid-sentence.
+                    payload['max_tokens']=8192
+                    if model.lower().startswith('z-ai/glm-5'):
+                        payload['reasoning']={'effort':'low','exclude':True}
             headers = {auth_header: auth_prefix + key} if key else {}
-        sent='Question, recent conversation and seven-day metric/coverage summary'
+        sent='Question, recent conversation and relevant seven-day observations: '+', '.join(context['context_selection'])
         if custom.strip():sent='Question, custom instructions, recent conversation and seven-day metric/coverage summary'
         return dict(provider=provider,local=local,model=model,url=endpoint.rstrip("/")+path,payload=payload,headers=headers,data_sent=sent)
+
+    async def verify_key(self,body):
+        from aiohttp import ClientError
+        if not isinstance(body,dict):raise ValueError('Key verification request must be an object')
+        request=self._request({'api_key':body.get('api_key',''),'consent':body.get('consent'),
+            'provider':'compatible','endpoint':'https://openrouter.ai/api/v1'}, {},catalog=True)
+        url='https://openrouter.ai/api/v1/key'
+        try:
+            async with ClientSession(timeout=ClientTimeout(total=15)) as client:
+                async with client.get(url,headers=request['headers'],allow_redirects=False) as response:
+                    if response.status!=200:raise ValueError(provider_error(response.status,url))
+                    return {'valid':True,'data_sent':'Authentication only'}
+        except (ClientError,OSError,asyncio.TimeoutError):raise ValueError('Cannot reach OpenRouter to verify the key; try again.') from None
 
     async def models(self,body):
         """Explicit model refresh; only authentication leaves this process.
@@ -214,7 +290,7 @@ class Coach:
                     async with client.post(request['url'], json=request['payload'], headers=request['headers'],allow_redirects=False) as response:
                         if response.status != 200:
                             # Never echo provider responses: they can contain credentials or prompts.
-                            raise ValueError(f"Coach provider returned HTTP {response.status}; check the model and endpoint")
+                            raise ValueError(provider_error(response.status,request['url']))
                         value = await response.json()
             except (OSError, asyncio.TimeoutError) as exc:
                 raise ValueError("Coach connection unavailable. Start the local model or check the selected provider.") from exc
@@ -259,7 +335,7 @@ class Coach:
             try:
                 async with ClientSession(timeout=ClientTimeout(total=150)) as client:
                     async with client.post(url,json=payload,headers=request['headers'],allow_redirects=False) as response:
-                        if response.status!=200:raise ValueError(f'Coach provider returned HTTP {response.status}; check the model and endpoint')
+                        if response.status!=200:raise ValueError(provider_error(response.status,request['url']))
                         yield dict(type='meta',**metadata)
                         async for raw in provider_events(response.content,provider):
                             text=filter.feed(raw)
